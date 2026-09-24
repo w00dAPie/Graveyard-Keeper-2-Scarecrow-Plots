@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Set this to your local Graveyard Keeper 2 installation directory -->
+    <GameDir>C:\Path\To\Graveyard Keeper 2</GameDir>
+  </PropertyGroup>
+</Project>

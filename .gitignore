@@ -1,0 +1,27 @@
+# Build output
+bin/
+obj/
+
+# Local build configuration
+Directory.Build.props
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# BepInEx runtime files
+BepInEx/
+LogOutput.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Release packages
+release/
+*.zip
