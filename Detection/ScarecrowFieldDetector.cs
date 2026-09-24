@@ -10,6 +10,13 @@ namespace GK2ScarecrowPlots.Detection
         private const float RowSpacingMiddle = 1.50f;
         private const float Tolerance = 0.10f;
 
+        /*
+         * We need enough surviving beds to reconstruct the field
+         * reliably, but individual positions may be replaced by
+         * player-built objects.
+         */
+        private const int MinimumMatches = 8;
+
         internal sealed class Result
         {
             public Vector3 MissingA;
@@ -19,27 +26,39 @@ namespace GK2ScarecrowPlots.Detection
             public bool MissingBOccupied;
         }
 
+        private sealed class Candidate
+        {
+            public Vector2 Origin;
+            public Vector2 ColumnDirection;
+            public Vector2 RowDirection;
+            public int Matches;
+        }
+
         internal static bool TryDetect(List<WgoData> beds, out Result result)
         {
             result = null;
 
-            if (beds == null || beds.Count < 18)
-                return false;
-
-            foreach (WgoData startBed in beds)
+            if (beds == null || beds.Count < MinimumMatches)
             {
-                Vector2 start = ToXZ(startBed.Position);
+                return false;
+            }
 
-                foreach (WgoData neighbourBed in beds)
+            Candidate best = null;
+
+            foreach (WgoData firstBed in beds)
+            {
+                Vector2 first = ToXZ(firstBed.Position);
+
+                foreach (WgoData secondBed in beds)
                 {
-                    if (ReferenceEquals(startBed, neighbourBed))
+                    if (ReferenceEquals(firstBed, secondBed))
                     {
                         continue;
                     }
 
-                    Vector2 neighbour = ToXZ(neighbourBed.Position);
+                    Vector2 second = ToXZ(secondBed.Position);
 
-                    Vector2 delta = neighbour - start;
+                    Vector2 delta = second - first;
 
                     if (Mathf.Abs(delta.magnitude - ColumnSpacing) > Tolerance)
                     {
@@ -48,85 +67,32 @@ namespace GK2ScarecrowPlots.Detection
 
                     Vector2 columnDirection = delta.normalized;
 
-                    if (!HasFiveBedRow(beds, start, columnDirection))
-                    {
-                        continue;
-                    }
-
                     Vector2 perpendicular = new Vector2(-columnDirection.y, columnDirection.x);
 
-                    if (TryMatch(beds, start, columnDirection, perpendicular, out result))
-                    {
-                        return true;
-                    }
+                    TestCandidates(beds, first, columnDirection, perpendicular, ref best);
 
-                    if (TryMatch(beds, start, columnDirection, -perpendicular, out result))
-                    {
-                        return true;
-                    }
+                    TestCandidates(beds, first, columnDirection, -perpendicular, ref best);
                 }
             }
 
-            return false;
-        }
-
-        private static bool TryMatch(
-            List<WgoData> beds,
-            Vector2 fullRowStart,
-            Vector2 columnDirection,
-            Vector2 rowDirection,
-            out Result result
-        )
-        {
-            result = null;
-
-            /*
-             * Expected field layout:
-             *
-             * ■ ■ ■ ■ ■
-             *     1.20
-             * ■ ■ ■ ■ ■
-             *     1.50
-             * ■ ■ X ■ ■
-             *     1.20
-             * ■ ■ X ■ ■
-             *
-             * X may be missing or already occupied.
-             */
-
-            Vector2 row0 = fullRowStart;
-
-            Vector2 row1 = row0 + rowDirection * RowSpacingOuter;
-
-            Vector2 row2 = row1 + rowDirection * RowSpacingMiddle;
-
-            Vector2 row3 = row2 + rowDirection * RowSpacingOuter;
-
-            if (!HasFiveBedRow(beds, row0, columnDirection))
+            if (best == null || best.Matches < MinimumMatches)
             {
                 return false;
             }
 
-            if (!HasFiveBedRow(beds, row1, columnDirection))
-            {
-                return false;
-            }
+            Vector2 row0 = best.Origin;
 
-            if (!HasScarecrowRow(beds, row2, columnDirection))
-            {
-                return false;
-            }
+            Vector2 row1 = row0 + best.RowDirection * RowSpacingOuter;
 
-            if (!HasScarecrowRow(beds, row3, columnDirection))
-            {
-                return false;
-            }
+            Vector2 row2 = row1 + best.RowDirection * RowSpacingMiddle;
 
-            Vector2 targetA = row2 + columnDirection * (ColumnSpacing * 2f);
+            Vector2 row3 = row2 + best.RowDirection * RowSpacingOuter;
 
-            Vector2 targetB = row3 + columnDirection * (ColumnSpacing * 2f);
+            Vector2 targetA = row2 + best.ColumnDirection * (ColumnSpacing * 2f);
 
-            float y = FindFieldY(beds, row0);
+            Vector2 targetB = row3 + best.ColumnDirection * (ColumnSpacing * 2f);
+
+            float y = FindFieldY(beds, best.Origin);
 
             result = new Result
             {
@@ -142,36 +108,85 @@ namespace GK2ScarecrowPlots.Detection
             return true;
         }
 
-        private static bool HasFiveBedRow(List<WgoData> beds, Vector2 start, Vector2 direction)
+        private static void TestCandidates(
+            List<WgoData> beds,
+            Vector2 knownBed,
+            Vector2 columnDirection,
+            Vector2 rowDirection,
+            ref Candidate best
+        )
         {
-            for (int column = 0; column < 5; column++)
-            {
-                Vector2 expected = start + direction * (ColumnSpacing * column);
+            /*
+             * The known bed may occupy any of the 20 positions.
+             * Try every possible row/column assignment.
+             */
 
-                if (!HasBedAt(beds, expected))
+            float[] rowOffsets =
+            {
+                0f,
+                RowSpacingOuter,
+                RowSpacingOuter + RowSpacingMiddle,
+                RowSpacingOuter + RowSpacingMiddle + RowSpacingOuter,
+            };
+
+            for (int row = 0; row < 4; row++)
+            {
+                for (int column = 0; column < 5; column++)
                 {
-                    return false;
+                    Vector2 origin =
+                        knownBed
+                        - columnDirection * (ColumnSpacing * column)
+                        - rowDirection * rowOffsets[row];
+
+                    int matches = CountMatches(beds, origin, columnDirection, rowDirection);
+
+                    if (best == null || matches > best.Matches)
+                    {
+                        best = new Candidate
+                        {
+                            Origin = origin,
+                            ColumnDirection = columnDirection,
+                            RowDirection = rowDirection,
+                            Matches = matches,
+                        };
+                    }
                 }
             }
-
-            return true;
         }
 
-        private static bool HasScarecrowRow(List<WgoData> beds, Vector2 start, Vector2 direction)
+        private static int CountMatches(
+            List<WgoData> beds,
+            Vector2 origin,
+            Vector2 columnDirection,
+            Vector2 rowDirection
+        )
         {
-            int[] requiredColumns = { 0, 1, 3, 4 };
+            int matches = 0;
 
-            foreach (int column in requiredColumns)
+            float[] rowOffsets =
             {
-                Vector2 expected = start + direction * (ColumnSpacing * column);
+                0f,
+                RowSpacingOuter,
+                RowSpacingOuter + RowSpacingMiddle,
+                RowSpacingOuter + RowSpacingMiddle + RowSpacingOuter,
+            };
 
-                if (!HasBedAt(beds, expected))
+            for (int row = 0; row < 4; row++)
+            {
+                Vector2 rowStart = origin + rowDirection * rowOffsets[row];
+
+                for (int column = 0; column < 5; column++)
                 {
-                    return false;
+                    Vector2 expected = rowStart + columnDirection * (ColumnSpacing * column);
+
+                    if (HasBedAt(beds, expected))
+                    {
+                        matches++;
+                    }
                 }
             }
 
-            return true;
+            return matches;
         }
 
         private static bool HasBedAt(List<WgoData> beds, Vector2 position)
@@ -198,7 +213,9 @@ namespace GK2ScarecrowPlots.Detection
                 float distance = Vector2.Distance(ToXZ(bed.Position), reference);
 
                 if (distance >= bestDistance)
+                {
                     continue;
+                }
 
                 bestDistance = distance;
                 y = bed.Position.y;
