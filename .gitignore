@@ -1,0 +1,24 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Rider
+.idea/
+
+# BepInEx runtime files
+BepInEx/
+LogOutput.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Release packages
+release/
+*.zip
