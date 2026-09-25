@@ -6,6 +6,7 @@ namespace GK2ScarecrowPlots.Logging
     internal static class ModLog
     {
         private static ManualLogSource logger;
+        internal static bool IsDebugEnabled => ModConfig.DebugLogging?.Value == true;
 
         internal static void Initialize(ManualLogSource source)
         {
@@ -24,7 +25,7 @@ namespace GK2ScarecrowPlots.Logging
 
         internal static void Debug(string message)
         {
-            if (ModConfig.DebugLogging?.Value != true)
+            if (!IsDebugEnabled)
             {
                 return;
             }

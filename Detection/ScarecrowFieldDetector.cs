@@ -12,6 +12,13 @@ namespace GK2ScarecrowPlots.Detection
         private const float Tolerance = 0.10f;
 
         private const int MinimumMatches = 8;
+        private static readonly float[] RowOffsets =
+        {
+            0f,
+            RowSpacingOuter,
+            RowSpacingOuter + RowSpacingMiddle,
+            RowSpacingOuter + RowSpacingMiddle + RowSpacingOuter,
+        };
 
         internal sealed class Result
         {
@@ -36,22 +43,25 @@ namespace GK2ScarecrowPlots.Detection
 
             if (beds == null)
             {
-                ModLog.Debug("Detector stopped: beds list is null.");
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug("Detector stopped: beds list is null.");
 
                 return false;
             }
 
-            ModLog.Debug(
-                $"Detector started | Beds={beds.Count} | " + $"MinimumMatches={MinimumMatches}"
-            );
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Detector started | Beds={beds.Count} | " + $"MinimumMatches={MinimumMatches}"
+                );
 
             if (beds.Count < MinimumMatches)
             {
-                ModLog.Debug(
-                    $"Detector stopped: not enough garden beds | "
-                        + $"Beds={beds.Count} | "
-                        + $"Minimum={MinimumMatches}"
-                );
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        $"Detector stopped: not enough garden beds | "
+                            + $"Beds={beds.Count} | "
+                            + $"Minimum={MinimumMatches}"
+                    );
 
                 return false;
             }
@@ -88,17 +98,19 @@ namespace GK2ScarecrowPlots.Detection
                 }
             }
 
-            ModLog.Debug(
-                $"Detector best candidate | "
-                    + $"Matches={best?.Matches ?? 0} | "
-                    + $"Origin={best?.Origin} | "
-                    + $"ColumnDirection={best?.ColumnDirection} | "
-                    + $"RowDirection={best?.RowDirection}"
-            );
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Detector best candidate | "
+                        + $"Matches={best?.Matches ?? 0} | "
+                        + $"Origin={best?.Origin} | "
+                        + $"ColumnDirection={best?.ColumnDirection} | "
+                        + $"RowDirection={best?.RowDirection}"
+                );
 
             if (best == null || best.Matches < MinimumMatches)
             {
-                ModLog.Debug("Detector stopped: no valid scarecrow field candidate.");
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug("Detector stopped: no valid scarecrow field candidate.");
 
                 return false;
             }
@@ -128,13 +140,14 @@ namespace GK2ScarecrowPlots.Detection
                 MissingBOccupied = HasBedAt(beds, targetB),
             };
 
-            ModLog.Debug(
-                $"Detector result | "
-                    + $"MissingA={result.MissingA} | "
-                    + $"OccupiedA={result.MissingAOccupied} | "
-                    + $"MissingB={result.MissingB} | "
-                    + $"OccupiedB={result.MissingBOccupied}"
-            );
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Detector result | "
+                        + $"MissingA={result.MissingA} | "
+                        + $"OccupiedA={result.MissingAOccupied} | "
+                        + $"MissingB={result.MissingB} | "
+                        + $"OccupiedB={result.MissingBOccupied}"
+                );
 
             return true;
         }
@@ -147,14 +160,6 @@ namespace GK2ScarecrowPlots.Detection
             ref Candidate best
         )
         {
-            float[] rowOffsets =
-            {
-                0f,
-                RowSpacingOuter,
-                RowSpacingOuter + RowSpacingMiddle,
-                RowSpacingOuter + RowSpacingMiddle + RowSpacingOuter,
-            };
-
             for (int row = 0; row < 4; row++)
             {
                 for (int column = 0; column < 5; column++)
@@ -162,7 +167,7 @@ namespace GK2ScarecrowPlots.Detection
                     Vector2 origin =
                         knownBed
                         - columnDirection * (ColumnSpacing * column)
-                        - rowDirection * rowOffsets[row];
+                        - rowDirection * RowOffsets[row];
 
                     int matches = CountMatches(beds, origin, columnDirection, rowDirection);
 
@@ -189,17 +194,9 @@ namespace GK2ScarecrowPlots.Detection
         {
             int matches = 0;
 
-            float[] rowOffsets =
-            {
-                0f,
-                RowSpacingOuter,
-                RowSpacingOuter + RowSpacingMiddle,
-                RowSpacingOuter + RowSpacingMiddle + RowSpacingOuter,
-            };
-
             for (int row = 0; row < 4; row++)
             {
-                Vector2 rowStart = origin + rowDirection * rowOffsets[row];
+                Vector2 rowStart = origin + rowDirection * RowOffsets[row];
 
                 for (int column = 0; column < 5; column++)
                 {

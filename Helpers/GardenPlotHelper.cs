@@ -8,14 +8,19 @@ namespace GK2ScarecrowPlots.Helpers
 {
     internal static class GardenPlotHelper
     {
-        internal static WgoData SpawnGardenPlot(GameScene scene, Vector3 position)
+        internal static WgoData SpawnGardenPlot(
+            GameScene scene,
+            Vector3 position,
+            PlotCreationBatch batch
+        )
         {
             if (scene == null)
             {
                 return null;
             }
 
-            ModLog.Debug($"Creating garden plot at {position}.");
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug($"Creating garden plot at {position}.");
 
             WgoData data = new WgoData("garden_empty", position, scene.Id);
 
@@ -28,11 +33,14 @@ namespace GK2ScarecrowPlots.Helpers
                 return null;
             }
 
-            RememberCreatedPlot(data);
+            batch.Remember(data);
 
-            ModLog.Debug(
-                $"Created garden plot | " + $"UniqueId={data.UniqueId} | " + $"Position={position}"
-            );
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Created garden plot | "
+                        + $"UniqueId={data.UniqueId} | "
+                        + $"Position={position}"
+                );
 
             return data;
         }
@@ -48,7 +56,7 @@ namespace GK2ScarecrowPlots.Helpers
 
             string[] ids = storedIds.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
 
-            List<string> remainingIds = new List<string>();
+            List<string> remainingIds = new List<string>(ids.Length);
 
             foreach (string idString in ids)
             {
@@ -69,7 +77,8 @@ namespace GK2ScarecrowPlots.Helpers
 
                 if (wgo == null)
                 {
-                    ModLog.Debug($"Stored garden plot no longer exists: {trimmed}");
+                    if (ModLog.IsDebugEnabled)
+                        ModLog.Debug($"Stored garden plot no longer exists: {trimmed}");
 
                     continue;
                 }
@@ -85,57 +94,59 @@ namespace GK2ScarecrowPlots.Helpers
                     continue;
                 }
 
-                ModLog.Debug(
-                    $"Removing garden plot | "
-                        + $"UniqueId={wgo.UniqueId} | "
-                        + $"ID={wgo.id} | "
-                        + $"Position={wgo.Position}"
-                );
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        $"Removing garden plot | "
+                            + $"UniqueId={wgo.UniqueId} | "
+                            + $"ID={wgo.id} | "
+                            + $"Position={wgo.Position}"
+                    );
 
                 MainGame.WorldData.RemoveWgoDataFromGameScene(wgo);
             }
 
             ModConfig.CreatedPlotIds.Value = string.Join(",", remainingIds);
 
-            ModConfig.Save();
+            ModConfig.SaveIfAutoSaveDisabled();
         }
 
-        private static void RememberCreatedPlot(WgoData data)
+        // Lazy parsing avoids any ID work when both target plots already exist.
+        // Dispose persists partial success even when the second spawn throws.
+        internal sealed class PlotCreationBatch : IDisposable
         {
-            if (data == null)
+            private HashSet<string> ids;
+            private bool changed;
+
+            internal void Remember(WgoData data)
             {
-                return;
-            }
-
-            string id = data.UniqueId.ToString();
-
-            HashSet<string> ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            string existing = ModConfig.CreatedPlotIds.Value;
-
-            if (!string.IsNullOrWhiteSpace(existing))
-            {
-                foreach (string value in existing.Split(','))
+                if (ids == null)
                 {
-                    string trimmed = value.Trim();
-
-                    if (!string.IsNullOrWhiteSpace(trimmed))
+                    ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    string existing = ModConfig.CreatedPlotIds.Value;
+                    if (!string.IsNullOrWhiteSpace(existing))
                     {
-                        ids.Add(trimmed);
+                        foreach (string value in existing.Split(','))
+                        {
+                            string trimmed = value.Trim();
+                            if (!string.IsNullOrWhiteSpace(trimmed))
+                                ids.Add(trimmed);
+                        }
                     }
                 }
+                string id = data.UniqueId.ToString();
+                changed |= ids.Add(id);
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug($"Remembered garden plot: {id}");
             }
 
-            if (!ids.Add(id))
+            public void Dispose()
             {
-                return;
+                if (!changed)
+                    return;
+                ModConfig.CreatedPlotIds.Value = string.Join(",", ids);
+                ModConfig.SaveIfAutoSaveDisabled();
+                changed = false;
             }
-
-            ModConfig.CreatedPlotIds.Value = string.Join(",", ids);
-
-            ModConfig.Save();
-
-            ModLog.Debug($"Remembered garden plot: {id}");
         }
     }
 }

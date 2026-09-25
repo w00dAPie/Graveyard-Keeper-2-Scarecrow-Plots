@@ -11,35 +11,27 @@ namespace GK2ScarecrowPlots.Services
         {
             const int maxAttempts = 50;
             const float delaySeconds = 0.1f;
+            var delay = new WaitForSecondsRealtime(delaySeconds);
 
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                ModLog.Debug($"GameStart fallback attempt={attempt}/{maxAttempts}");
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug($"GameStart fallback attempt={attempt}/{maxAttempts}");
 
-                WorldZone[] zones = Object.FindObjectsByType<WorldZone>(
-                    FindObjectsInactive.Include,
-                    FindObjectsSortMode.None
-                );
-
-                ModLog.Debug($"WorldZones found={zones.Length}");
-
-                foreach (WorldZone zone in zones)
+                if (GardenZoneRegistry.TryGet(out WorldZone zone))
                 {
-                    if (zone?.Data == null || zone.Data.id != "garden")
-                    {
-                        continue;
-                    }
-
-                    ModLog.Debug(
-                        $"Garden zone found by GameStart fallback | " + $"Attempt={attempt}"
-                    );
+                    if (ModLog.IsDebugEnabled)
+                        ModLog.Debug(
+                            $"Garden zone found by GameStart fallback | " + $"Attempt={attempt}"
+                        );
 
                     GardenZoneProcessor.Process(zone, "MainGame.OnGameStarted");
-
+                    // Anchor availability and incomplete work are retried by the two-second
+                    // watcher; do not rerun grid detection at the discovery polling rate.
                     yield break;
                 }
 
-                yield return new WaitForSecondsRealtime(delaySeconds);
+                yield return delay;
             }
 
             ModLog.Warning(

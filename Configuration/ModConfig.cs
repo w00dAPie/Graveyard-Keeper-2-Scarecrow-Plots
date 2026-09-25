@@ -69,12 +69,13 @@ namespace GK2ScarecrowPlots.Configuration
 
             CreatedPlotIds.Value = legacy.CreatedPlotIds;
 
-            config.Save();
+            SaveIfAutoSaveDisabled();
         }
 
-        internal static void Save()
+        internal static void SaveIfAutoSaveDisabled()
         {
-            configFile?.Save();
+            if (configFile != null && !configFile.SaveOnConfigSet)
+                configFile.Save();
         }
     }
 }

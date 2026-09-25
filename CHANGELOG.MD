@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.6 - 2026-09-25
+
+### Changed
+
+- Reduced unnecessary scarecrow and garden discovery work.
+- Reused already discovered scarecrow references instead of performing redundant searches.
+- Reduced duplicate garden processing where possible while preserving delayed initialization handling.
+- Reduced allocations in fallback garden detection.
+- Improved garden data collection efficiency.
+- Reduced unnecessary configuration persistence work.
+- Reduced debug formatting overhead when debug logging is disabled.
+
+### Performance
+
+- Improved behavior around area and garden loading by reducing avoidable scene and object processing.
 
 ## 0.1.5
 

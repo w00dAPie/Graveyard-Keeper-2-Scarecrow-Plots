@@ -30,9 +30,10 @@ namespace GK2ScarecrowPlots.Helpers
 
                 renderer.enabled = false;
 
-                ModLog.Debug(
-                    $"Scarecrow renderer disabled | " + $"Name={renderer.gameObject.name}"
-                );
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        $"Scarecrow renderer disabled | " + $"Name={renderer.gameObject.name}"
+                    );
             }
         }
 
@@ -49,11 +50,12 @@ namespace GK2ScarecrowPlots.Helpers
 
                 collider.enabled = false;
 
-                ModLog.Debug(
-                    $"Scarecrow collider disabled | "
-                        + $"Name={collider.gameObject.name} | "
-                        + $"Type={collider.GetType().Name}"
-                );
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        $"Scarecrow collider disabled | "
+                            + $"Name={collider.gameObject.name} | "
+                            + $"Type={collider.GetType().Name}"
+                    );
             }
         }
     }

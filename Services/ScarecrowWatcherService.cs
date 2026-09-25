@@ -9,72 +9,61 @@ namespace GK2ScarecrowPlots.Services
 {
     internal sealed class ScarecrowWatcherService
     {
-        private int lastScarecrowInstanceId;
+        private Transform currentScarecrow;
+        private object currentWorld;
+        private bool gardenProcessed;
 
         internal IEnumerator Watch()
         {
-            const float checkInterval = 0.5f;
-
+            const float searchInterval = 2f;
+            var delay = new WaitForSecondsRealtime(searchInterval);
             while (true)
             {
-                ProcessScarecrow();
-
-                yield return new WaitForSecondsRealtime(checkInterval);
-            }
-        }
-
-        private void ProcessScarecrow()
-        {
-            if (!ScarecrowAnchorDetector.TryGetScarecrowRoot(out Transform scarecrow))
-            {
-                return;
-            }
-
-            int instanceId = scarecrow.gameObject.GetInstanceID();
-
-            if (instanceId == lastScarecrowInstanceId)
-            {
-                return;
-            }
-
-            lastScarecrowInstanceId = instanceId;
-
-            ModLog.Debug(
-                $"New scarecrow instance detected | "
-                    + $"InstanceId={instanceId} | "
-                    + $"Position={scarecrow.position}"
-            );
-
-            ProcessGardenWithAnchor();
-
-            if (ModConfig.HideScarecrow?.Value == true)
-            {
-                ScarecrowVisualHelper.Hide(scarecrow);
-            }
-        }
-
-        private static void ProcessGardenWithAnchor()
-        {
-            WorldZone[] zones = Object.FindObjectsByType<WorldZone>(
-                FindObjectsInactive.Include,
-                FindObjectsSortMode.None
-            );
-
-            foreach (WorldZone zone in zones)
-            {
-                if (zone?.Data == null || zone.Data.id != "garden")
+                WorldData world = GameWorldAccess.Current;
+                if (world == null)
                 {
+                    currentWorld = null;
+                    currentScarecrow = null;
+                    gardenProcessed = false;
+                    yield return delay;
                     continue;
                 }
+                if (!ReferenceEquals(currentWorld, world))
+                {
+                    currentWorld = world;
+                    currentScarecrow = null;
+                    gardenProcessed = false;
+                }
+                if (currentScarecrow == null)
+                    FindScarecrow();
 
-                ModLog.Debug("Reprocessing garden after scarecrow instance became available.");
-
-                GardenZoneProcessor.Process(zone, "ScarecrowWatcher");
-
-                return;
+                // Retry delayed zone/scene initialization or a failed spawn using the known anchor.
+                if (currentScarecrow != null && !gardenProcessed)
+                {
+                    if (GardenZoneRegistry.TryGet(out WorldZone zone))
+                        gardenProcessed = GardenZoneProcessor.Process(
+                            zone,
+                            "ScarecrowWatcher",
+                            currentScarecrow
+                        );
+                }
+                yield return delay;
             }
+        }
 
-            ModLog.Debug("Garden zone not found while processing scarecrow instance.");
+        private void FindScarecrow()
+        {
+            gardenProcessed = false;
+            if (!ScarecrowAnchorDetector.TryGetScarecrowRoot(out Transform scarecrow))
+                return;
+            currentScarecrow = scarecrow;
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"New scarecrow instance detected | InstanceId={scarecrow.gameObject.GetInstanceID()} | Position={scarecrow.position}"
+                );
+
+            if (ModConfig.HideScarecrow?.Value == true)
+                ScarecrowVisualHelper.Hide(scarecrow);
         }
     }
 }

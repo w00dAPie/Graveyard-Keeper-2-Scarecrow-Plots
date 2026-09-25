@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GK2ScarecrowPlots.Helpers;
 using GK2ScarecrowPlots.Logging;
 using UnityEngine;
 
@@ -7,6 +8,8 @@ namespace GK2ScarecrowPlots.Detection
     internal static class ScarecrowAnchorDetector
     {
         private const float OccupancyTolerance = 0.10f;
+        private static Transform cachedScarecrow;
+        private static object cachedWorld;
 
         internal sealed class Result
         {
@@ -21,29 +24,45 @@ namespace GK2ScarecrowPlots.Detection
 
         internal static bool TryDetect(List<WgoData> beds, out Result result)
         {
+            Transform scarecrow = null;
+            if (beds != null && beds.Count > 0)
+                TryGetScarecrowRoot(out scarecrow);
+            return TryDetect(beds, scarecrow, out result);
+        }
+
+        internal static bool TryDetect(List<WgoData> beds, Transform scarecrow, out Result result)
+        {
             result = null;
 
             if (beds == null || beds.Count == 0)
             {
-                ModLog.Debug("Scarecrow anchor detection failed: no garden beds.");
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug("Scarecrow anchor detection failed: no garden beds.");
 
                 return false;
             }
 
-            if (!TryGetScarecrowRoot(out Transform scarecrow))
+            if (scarecrow == null)
             {
-                ModLog.Debug("Scarecrow anchor detection failed: " + "scarecrow root not found.");
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        "Scarecrow anchor detection failed: " + "scarecrow root not found."
+                    );
 
                 return false;
             }
 
             Vector3 scarecrowPosition = scarecrow.position;
 
-            ModLog.Debug($"Scarecrow anchor found | " + $"Position={scarecrowPosition}");
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug($"Scarecrow anchor found | " + $"Position={scarecrowPosition}");
 
             if (!TryFindNearestColumn(beds, scarecrowPosition.x, out float columnX))
             {
-                ModLog.Debug("Scarecrow anchor detection failed: " + "garden column not found.");
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        "Scarecrow anchor detection failed: " + "garden column not found."
+                    );
 
                 return false;
             }
@@ -52,9 +71,10 @@ namespace GK2ScarecrowPlots.Detection
                 !TryFindRows(beds, columnX, scarecrowPosition.z, out float upperZ, out float lowerZ)
             )
             {
-                ModLog.Debug(
-                    "Scarecrow anchor detection failed: " + "surrounding garden rows not found."
-                );
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        "Scarecrow anchor detection failed: " + "surrounding garden rows not found."
+                    );
 
                 return false;
             }
@@ -80,23 +100,38 @@ namespace GK2ScarecrowPlots.Detection
                 ScarecrowPosition = scarecrowPosition,
             };
 
-            ModLog.Debug(
-                $"Scarecrow anchor result | "
-                    + $"ColumnX={columnX:F2} | "
-                    + $"UpperZ={upperZ:F2} | "
-                    + $"LowerZ={lowerZ:F2} | "
-                    + $"TargetA={upper} | "
-                    + $"OccupiedA={upperOccupied} | "
-                    + $"TargetB={lower} | "
-                    + $"OccupiedB={lowerOccupied}"
-            );
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Scarecrow anchor result | "
+                        + $"ColumnX={columnX:F2} | "
+                        + $"UpperZ={upperZ:F2} | "
+                        + $"LowerZ={lowerZ:F2} | "
+                        + $"TargetA={upper} | "
+                        + $"OccupiedA={upperOccupied} | "
+                        + $"TargetB={lower} | "
+                        + $"OccupiedB={lowerOccupied}"
+                );
 
             return true;
         }
 
         internal static bool TryGetScarecrowRoot(out Transform scarecrow)
         {
+            WorldData world = GameWorldAccess.Current;
             scarecrow = null;
+            if (world == null)
+            {
+                cachedScarecrow = null;
+                cachedWorld = null;
+                return false;
+            }
+            if (ReferenceEquals(cachedWorld, world) && IsScarecrowRoot(cachedScarecrow))
+            {
+                scarecrow = cachedScarecrow;
+                return true;
+            }
+            cachedScarecrow = null;
+            cachedWorld = world;
 
             Transform[] transforms = Object.FindObjectsByType<Transform>(
                 FindObjectsInactive.Include,
@@ -105,36 +140,29 @@ namespace GK2ScarecrowPlots.Detection
 
             foreach (Transform transform in transforms)
             {
-                if (transform == null)
-                {
-                    continue;
-                }
-
-                if (transform.name != "scarecrow_on_stick")
-                {
-                    continue;
-                }
-
-                Transform parent = transform.parent;
-
-                if (parent == null || parent.name != "Base")
-                {
-                    continue;
-                }
-
-                Transform gardenRoot = parent.parent;
-
-                if (gardenRoot == null || gardenRoot.name != "garden_t1(Clone)")
+                if (!IsScarecrowRoot(transform))
                 {
                     continue;
                 }
 
                 scarecrow = transform;
+                cachedScarecrow = transform;
 
                 return true;
             }
 
             return false;
+        }
+
+        private static bool IsScarecrowRoot(Transform transform)
+        {
+            if (transform == null || transform.name != "scarecrow_on_stick")
+                return false;
+            Transform parent = transform.parent;
+            if (parent == null || parent.name != "Base")
+                return false;
+            Transform root = parent.parent;
+            return root != null && root.name == "garden_t1(Clone)";
         }
 
         private static bool TryFindNearestColumn(
@@ -170,12 +198,13 @@ namespace GK2ScarecrowPlots.Detection
                 found = true;
             }
 
-            ModLog.Debug(
-                $"Scarecrow nearest column | "
-                    + $"ScarecrowX={scarecrowX:F2} | "
-                    + $"ColumnX={columnX:F2} | "
-                    + $"Distance={bestDistance:F2}"
-            );
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Scarecrow nearest column | "
+                        + $"ScarecrowX={scarecrowX:F2} | "
+                        + $"ColumnX={columnX:F2} | "
+                        + $"Distance={bestDistance:F2}"
+                );
 
             return found;
         }
@@ -243,15 +272,16 @@ namespace GK2ScarecrowPlots.Detection
                 }
             }
 
-            ModLog.Debug(
-                $"Scarecrow surrounding rows | "
-                    + $"ColumnX={columnX:F2} | "
-                    + $"ScarecrowZ={scarecrowZ:F2} | "
-                    + $"UpperZ={upperZ:F2} | "
-                    + $"UpperDistance={upperDistance:F2} | "
-                    + $"LowerZ={lowerZ:F2} | "
-                    + $"LowerDistance={lowerDistance:F2}"
-            );
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Scarecrow surrounding rows | "
+                        + $"ColumnX={columnX:F2} | "
+                        + $"ScarecrowZ={scarecrowZ:F2} | "
+                        + $"UpperZ={upperZ:F2} | "
+                        + $"UpperDistance={upperDistance:F2} | "
+                        + $"LowerZ={lowerZ:F2} | "
+                        + $"LowerDistance={lowerDistance:F2}"
+                );
 
             return upperFound && lowerFound;
         }
