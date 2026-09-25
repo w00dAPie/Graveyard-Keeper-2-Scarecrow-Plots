@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.1.6 - 2026-09-25
+## 0.1.7
+
+- Fixed scarecrow detection after upgrading the garden.
+- Added support for changed and nested scarecrow hierarchies.
+- Improved compatibility with different garden upgrade levels.
+- Prevented incorrect grid fallback detection when the upgraded scarecrow is available.
+
+## 0.1.6
 
 ### Changed
 

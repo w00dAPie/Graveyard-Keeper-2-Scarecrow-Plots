@@ -119,17 +119,20 @@ namespace GK2ScarecrowPlots.Detection
         {
             WorldData world = GameWorldAccess.Current;
             scarecrow = null;
+
             if (world == null)
             {
                 cachedScarecrow = null;
                 cachedWorld = null;
                 return false;
             }
-            if (ReferenceEquals(cachedWorld, world) && IsScarecrowRoot(cachedScarecrow))
+
+            if (ReferenceEquals(cachedWorld, world) && IsValidScarecrowAnchor(cachedScarecrow))
             {
                 scarecrow = cachedScarecrow;
                 return true;
             }
+
             cachedScarecrow = null;
             cachedWorld = world;
 
@@ -138,31 +141,122 @@ namespace GK2ScarecrowPlots.Detection
                 FindObjectsSortMode.None
             );
 
+            Transform bestCandidate = null;
+
             foreach (Transform transform in transforms)
             {
-                if (!IsScarecrowRoot(transform))
+                if (!TryGetScarecrowAnchor(transform, out Transform candidate))
+                    continue;
+
+                if (ReferenceEquals(bestCandidate, candidate))
+                    continue;
+
+                if (bestCandidate == null)
                 {
+                    bestCandidate = candidate;
                     continue;
                 }
 
-                scarecrow = transform;
-                cachedScarecrow = transform;
+                if (
+                    !bestCandidate.gameObject.activeInHierarchy
+                    && candidate.gameObject.activeInHierarchy
+                )
+                    bestCandidate = candidate;
+            }
 
-                return true;
+            if (bestCandidate == null)
+                return false;
+
+            cachedScarecrow = bestCandidate;
+            scarecrow = bestCandidate;
+
+            if (ModLog.IsDebugEnabled)
+            {
+                ModLog.Debug(
+                    $"Scarecrow anchor selected | "
+                        + $"Path={GetTransformPath(bestCandidate)} | "
+                        + $"Position={bestCandidate.position}"
+                );
+            }
+
+            return true;
+        }
+
+        private static bool IsValidScarecrowAnchor(Transform transform)
+        {
+            if (transform == null)
+                return false;
+
+            Transform parent = transform.parent;
+
+            if (parent == null || parent.name != "Base")
+                return false;
+
+            if (!transform.name.StartsWith("scarecrow_on_stick"))
+                return false;
+
+            return IsGardenRoot(parent.parent);
+        }
+
+        private static string GetTransformPath(Transform transform)
+        {
+            if (transform == null)
+                return "<null>";
+
+            string path = transform.name;
+            Transform current = transform.parent;
+
+            while (current != null)
+            {
+                path = current.name + "/" + path;
+                current = current.parent;
+            }
+
+            return path;
+        }
+
+        private static bool TryGetScarecrowAnchor(Transform transform, out Transform anchor)
+        {
+            anchor = null;
+
+            if (transform == null)
+                return false;
+
+            if (!transform.name.StartsWith("scarecrow_on_stick"))
+                return false;
+
+            Transform current = transform;
+
+            while (current != null)
+            {
+                Transform parent = current.parent;
+
+                if (parent == null)
+                    return false;
+
+                if (parent.name == "Base")
+                {
+                    Transform gardenRoot = parent.parent;
+
+                    if (!IsGardenRoot(gardenRoot))
+                        return false;
+
+                    anchor = current;
+                    return true;
+                }
+
+                current = parent;
             }
 
             return false;
         }
 
-        private static bool IsScarecrowRoot(Transform transform)
+        private static bool IsGardenRoot(Transform transform)
         {
-            if (transform == null || transform.name != "scarecrow_on_stick")
+            if (transform == null)
                 return false;
-            Transform parent = transform.parent;
-            if (parent == null || parent.name != "Base")
-                return false;
-            Transform root = parent.parent;
-            return root != null && root.name == "garden_t1(Clone)";
+
+            return transform.name.StartsWith("garden_t") && transform.name.EndsWith("(Clone)");
         }
 
         private static bool TryFindNearestColumn(

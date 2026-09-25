@@ -83,4 +83,3 @@ namespace GK2ScarecrowPlots
         }
     }
 }
-
