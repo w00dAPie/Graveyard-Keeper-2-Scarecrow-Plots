@@ -10,6 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="Sirenix.Serialization">
+      <HintPath>$(GameDir)\GraveyardKeeper2_Data\Managed\Sirenix.Serialization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
     <Reference Include="BepInEx">
       <HintPath>$(BepInExDir)\BepInEx.dll</HintPath>
       <Private>false</Private>
@@ -50,8 +55,8 @@
       <Private>false</Private>
     </Reference>
 
-    <Reference Include="Sirenix.Serialization">
-      <HintPath>$(GameDir)\GraveyardKeeper2_Data\Managed\Sirenix.Serialization.dll</HintPath>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

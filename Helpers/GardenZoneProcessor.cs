@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using GK2ScarecrowPlots.Configuration;
 using GK2ScarecrowPlots.Detection;
+using GK2ScarecrowPlots.Logging;
 using UnityEngine;
 
 namespace GK2ScarecrowPlots.Helpers
@@ -12,7 +14,7 @@ namespace GK2ScarecrowPlots.Helpers
         {
             if (zone == null)
             {
-                Plugin.DebugLog($"Garden processing skipped | Source={source} | Zone=null");
+                ModLog.Debug($"Garden processing skipped | Source={source} | Zone=null");
 
                 return;
             }
@@ -24,11 +26,19 @@ namespace GK2ScarecrowPlots.Helpers
                 return;
             }
 
-            Plugin.DebugLog($"Processing garden | Source={source} | ZoneId={zoneData.id}");
+            ModLog.Debug($"Processing garden | Source={source} | ZoneId={zoneData.id}");
 
-            if (!Plugin.Enabled.Value)
+            if (!ModConfig.Enabled.Value)
             {
-                Plugin.DebugLog("Scarecrow Plots disabled. Removing mod-created plots.");
+                ModLog.Debug("Scarecrow Plots disabled. Removing mod-created plots.");
+
+                if (string.IsNullOrWhiteSpace(ModConfig.CreatedPlotIds.Value))
+                {
+                    ModLog.Debug(
+                        "No stored plot IDs found. "
+                            + "Existing plots may need to be removed manually in-game."
+                    );
+                }
 
                 GardenPlotHelper.RemoveCreatedPlots();
 
@@ -38,48 +48,93 @@ namespace GK2ScarecrowPlots.Helpers
             List<WgoData> wgos = CollectWgos(zoneData);
             List<WgoData> beds = CollectGardenBeds(wgos);
 
-            Plugin.DebugLog($"Garden scan | WGOs={wgos.Count} | GardenBeds={beds.Count}");
+            ModLog.Debug($"Garden scan | WGOs={wgos.Count} | GardenBeds={beds.Count}");
 
             bool hasGardenBuilder = HasGardenBuilder(wgos);
 
-            Plugin.DebugLog($"builder_garden present={hasGardenBuilder}");
+            ModLog.Debug($"builder_garden present={hasGardenBuilder}");
 
             if (!hasGardenBuilder)
             {
                 return;
             }
 
-            Plugin.DebugLog($"Starting scarecrow detection | Beds={beds.Count}");
+            ModLog.Debug($"Starting scarecrow detection | " + $"Beds={beds.Count}");
 
-            if (!ScarecrowFieldDetector.TryDetect(beds, out ScarecrowFieldDetector.Result result))
+            Vector3 targetA;
+            Vector3 targetB;
+
+            bool targetAOccupied;
+            bool targetBOccupied;
+
+            if (
+                ScarecrowAnchorDetector.TryDetect(
+                    beds,
+                    out ScarecrowAnchorDetector.Result anchorResult
+                )
+            )
             {
-                Plugin.DebugLog("Scarecrow detection failed.");
+                ModLog.Debug("Scarecrow detection method=Anchor");
 
-                return;
+                targetA = anchorResult.MissingA;
+
+                targetB = anchorResult.MissingB;
+
+                targetAOccupied = anchorResult.MissingAOccupied;
+
+                targetBOccupied = anchorResult.MissingBOccupied;
+            }
+            else
+            {
+                ModLog.Debug(
+                    "Scarecrow anchor detection unavailable. " + "Falling back to grid detection."
+                );
+
+                if (
+                    !ScarecrowFieldDetector.TryDetect(
+                        beds,
+                        out ScarecrowFieldDetector.Result gridResult
+                    )
+                )
+                {
+                    ModLog.Debug("Scarecrow detection failed.");
+
+                    return;
+                }
+
+                ModLog.Debug("Scarecrow detection method=GridFallback");
+
+                targetA = gridResult.MissingA;
+
+                targetB = gridResult.MissingB;
+
+                targetAOccupied = gridResult.MissingAOccupied;
+
+                targetBOccupied = gridResult.MissingBOccupied;
             }
 
-            Plugin.DebugLog(
+            ModLog.Debug(
                 $"Scarecrow detection succeeded | "
-                    + $"TargetA={result.MissingA} | "
-                    + $"OccupiedA={result.MissingAOccupied} | "
-                    + $"TargetB={result.MissingB} | "
-                    + $"OccupiedB={result.MissingBOccupied}"
+                    + $"TargetA={targetA} | "
+                    + $"OccupiedA={targetAOccupied} | "
+                    + $"TargetB={targetB} | "
+                    + $"OccupiedB={targetBOccupied}"
             );
 
             GameScene scene = MainGame.PlayerController?.CurrentGameScene;
 
             if (scene == null)
             {
-                Plugin.DebugLog(
+                ModLog.Debug(
                     $"Garden processing stopped | Source={source} | " + "CurrentGameScene=null"
                 );
 
                 return;
             }
 
-            TrySpawnGardenPlot(scene, wgos, result.MissingA, result.MissingAOccupied);
+            TrySpawnGardenPlot(scene, wgos, targetA, targetAOccupied);
 
-            TrySpawnGardenPlot(scene, wgos, result.MissingB, result.MissingBOccupied);
+            TrySpawnGardenPlot(scene, wgos, targetB, targetBOccupied);
         }
 
         private static void TrySpawnGardenPlot(
@@ -91,20 +146,20 @@ namespace GK2ScarecrowPlots.Helpers
         {
             if (gardenBedOccupied)
             {
-                Plugin.DebugLog(
+                ModLog.Debug(
                     $"Skipping garden plot at {position}: " + "garden bed already exists."
                 );
 
                 return;
             }
 
-            Plugin.DebugLog($"Checking target for blocking WGOs | Position={position}");
+            ModLog.Debug($"Checking target for blocking WGOs | Position={position}");
 
             WgoData blockingWgo = FindBlockingWgo(wgos, position);
 
             if (blockingWgo != null)
             {
-                Plugin.DebugLog(
+                ModLog.Debug(
                     $"Target blocked | "
                         + $"Position={position} | "
                         + $"BlockingWgo="
@@ -115,7 +170,7 @@ namespace GK2ScarecrowPlots.Helpers
                 return;
             }
 
-            Plugin.DebugLog($"Target clear | Position={position}");
+            ModLog.Debug($"Target clear | Position={position}");
 
             WgoData created = GardenPlotHelper.SpawnGardenPlot(scene, position);
 

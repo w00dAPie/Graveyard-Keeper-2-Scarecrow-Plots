@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using GK2ScarecrowPlots.Configuration;
+using GK2ScarecrowPlots.Logging;
 using UnityEngine;
 
 namespace GK2ScarecrowPlots.Helpers
@@ -9,9 +11,11 @@ namespace GK2ScarecrowPlots.Helpers
         internal static WgoData SpawnGardenPlot(GameScene scene, Vector3 position)
         {
             if (scene == null)
+            {
                 return null;
+            }
 
-            Plugin.Log.LogDebug($"Creating garden plot at {position}.");
+            ModLog.Debug($"Creating garden plot at {position}.");
 
             WgoData data = new WgoData("garden_empty", position, scene.Id);
 
@@ -19,14 +23,14 @@ namespace GK2ScarecrowPlots.Helpers
 
             if (spawned == null)
             {
-                Plugin.Log.LogWarning($"Failed to create garden plot at {position}.");
+                ModLog.Warning($"Failed to create garden plot at {position}.");
 
                 return null;
             }
 
             RememberCreatedPlot(data);
 
-            Plugin.Log.LogDebug(
+            ModLog.Debug(
                 $"Created garden plot | " + $"UniqueId={data.UniqueId} | " + $"Position={position}"
             );
 
@@ -35,10 +39,12 @@ namespace GK2ScarecrowPlots.Helpers
 
         internal static void RemoveCreatedPlots()
         {
-            string storedIds = Plugin.CreatedPlotIds.Value;
+            string storedIds = ModConfig.CreatedPlotIds.Value;
 
             if (string.IsNullOrWhiteSpace(storedIds))
+            {
                 return;
+            }
 
             string[] ids = storedIds.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
 
@@ -50,9 +56,10 @@ namespace GK2ScarecrowPlots.Helpers
 
                 if (!Guid.TryParse(trimmed, out Guid guidValue))
                 {
-                    Plugin.Log.LogWarning($"Invalid stored garden plot ID: {trimmed}");
+                    ModLog.Warning($"Invalid stored garden plot ID: {trimmed}");
 
                     remainingIds.Add(trimmed);
+
                     continue;
                 }
 
@@ -62,22 +69,23 @@ namespace GK2ScarecrowPlots.Helpers
 
                 if (wgo == null)
                 {
-                    Plugin.Log.LogDebug($"Stored garden plot no longer exists: {trimmed}");
+                    ModLog.Debug($"Stored garden plot no longer exists: {trimmed}");
 
                     continue;
                 }
 
                 if (wgo.Definition == null || wgo.Definition.wgoGroup != "garden_bed")
                 {
-                    Plugin.Log.LogWarning(
+                    ModLog.Warning(
                         $"Stored object {trimmed} is not a garden bed. " + "It will not be removed."
                     );
 
                     remainingIds.Add(trimmed);
+
                     continue;
                 }
 
-                Plugin.Log.LogDebug(
+                ModLog.Debug(
                     $"Removing garden plot | "
                         + $"UniqueId={wgo.UniqueId} | "
                         + $"ID={wgo.id} | "
@@ -87,21 +95,23 @@ namespace GK2ScarecrowPlots.Helpers
                 MainGame.WorldData.RemoveWgoDataFromGameScene(wgo);
             }
 
-            Plugin.CreatedPlotIds.Value = string.Join(",", remainingIds);
+            ModConfig.CreatedPlotIds.Value = string.Join(",", remainingIds);
 
-            Plugin.ConfigFile.Save();
+            ModConfig.Save();
         }
 
         private static void RememberCreatedPlot(WgoData data)
         {
             if (data == null)
+            {
                 return;
+            }
 
             string id = data.UniqueId.ToString();
 
             HashSet<string> ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            string existing = Plugin.CreatedPlotIds.Value;
+            string existing = ModConfig.CreatedPlotIds.Value;
 
             if (!string.IsNullOrWhiteSpace(existing))
             {
@@ -117,13 +127,15 @@ namespace GK2ScarecrowPlots.Helpers
             }
 
             if (!ids.Add(id))
+            {
                 return;
+            }
 
-            Plugin.CreatedPlotIds.Value = string.Join(",", ids);
+            ModConfig.CreatedPlotIds.Value = string.Join(",", ids);
 
-            Plugin.ConfigFile.Save();
+            ModConfig.Save();
 
-            Plugin.Log.LogDebug($"Remembered garden plot: {id}");
+            ModLog.Debug($"Remembered garden plot: {id}");
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GK2ScarecrowPlots.Logging;
 using UnityEngine;
 
 namespace GK2ScarecrowPlots.Detection
@@ -35,18 +36,18 @@ namespace GK2ScarecrowPlots.Detection
 
             if (beds == null)
             {
-                Plugin.DebugLog("Detector stopped: beds list is null.");
+                ModLog.Debug("Detector stopped: beds list is null.");
 
                 return false;
             }
 
-            Plugin.DebugLog(
+            ModLog.Debug(
                 $"Detector started | Beds={beds.Count} | " + $"MinimumMatches={MinimumMatches}"
             );
 
             if (beds.Count < MinimumMatches)
             {
-                Plugin.DebugLog(
+                ModLog.Debug(
                     $"Detector stopped: not enough garden beds | "
                         + $"Beds={beds.Count} | "
                         + $"Minimum={MinimumMatches}"
@@ -87,7 +88,7 @@ namespace GK2ScarecrowPlots.Detection
                 }
             }
 
-            Plugin.DebugLog(
+            ModLog.Debug(
                 $"Detector best candidate | "
                     + $"Matches={best?.Matches ?? 0} | "
                     + $"Origin={best?.Origin} | "
@@ -97,7 +98,7 @@ namespace GK2ScarecrowPlots.Detection
 
             if (best == null || best.Matches < MinimumMatches)
             {
-                Plugin.DebugLog("Detector stopped: no valid scarecrow field candidate.");
+                ModLog.Debug("Detector stopped: no valid scarecrow field candidate.");
 
                 return false;
             }
@@ -127,7 +128,7 @@ namespace GK2ScarecrowPlots.Detection
                 MissingBOccupied = HasBedAt(beds, targetB),
             };
 
-            Plugin.DebugLog(
+            ModLog.Debug(
                 $"Detector result | "
                     + $"MissingA={result.MissingA} | "
                     + $"OccupiedA={result.MissingAOccupied} | "
