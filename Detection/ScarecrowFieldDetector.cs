@@ -10,11 +10,6 @@ namespace GK2ScarecrowPlots.Detection
         private const float RowSpacingMiddle = 1.50f;
         private const float Tolerance = 0.10f;
 
-        /*
-         * We need enough surviving beds to reconstruct the field
-         * reliably, but individual positions may be replaced by
-         * player-built objects.
-         */
         private const int MinimumMatches = 8;
 
         internal sealed class Result
@@ -38,8 +33,25 @@ namespace GK2ScarecrowPlots.Detection
         {
             result = null;
 
-            if (beds == null || beds.Count < MinimumMatches)
+            if (beds == null)
             {
+                Plugin.DebugLog("Detector stopped: beds list is null.");
+
+                return false;
+            }
+
+            Plugin.DebugLog(
+                $"Detector started | Beds={beds.Count} | " + $"MinimumMatches={MinimumMatches}"
+            );
+
+            if (beds.Count < MinimumMatches)
+            {
+                Plugin.DebugLog(
+                    $"Detector stopped: not enough garden beds | "
+                        + $"Beds={beds.Count} | "
+                        + $"Minimum={MinimumMatches}"
+                );
+
                 return false;
             }
 
@@ -75,8 +87,18 @@ namespace GK2ScarecrowPlots.Detection
                 }
             }
 
+            Plugin.DebugLog(
+                $"Detector best candidate | "
+                    + $"Matches={best?.Matches ?? 0} | "
+                    + $"Origin={best?.Origin} | "
+                    + $"ColumnDirection={best?.ColumnDirection} | "
+                    + $"RowDirection={best?.RowDirection}"
+            );
+
             if (best == null || best.Matches < MinimumMatches)
             {
+                Plugin.DebugLog("Detector stopped: no valid scarecrow field candidate.");
+
                 return false;
             }
 
@@ -105,6 +127,14 @@ namespace GK2ScarecrowPlots.Detection
                 MissingBOccupied = HasBedAt(beds, targetB),
             };
 
+            Plugin.DebugLog(
+                $"Detector result | "
+                    + $"MissingA={result.MissingA} | "
+                    + $"OccupiedA={result.MissingAOccupied} | "
+                    + $"MissingB={result.MissingB} | "
+                    + $"OccupiedB={result.MissingBOccupied}"
+            );
+
             return true;
         }
 
@@ -116,11 +146,6 @@ namespace GK2ScarecrowPlots.Detection
             ref Candidate best
         )
         {
-            /*
-             * The known bed may occupy any of the 20 positions.
-             * Try every possible row/column assignment.
-             */
-
             float[] rowOffsets =
             {
                 0f,
