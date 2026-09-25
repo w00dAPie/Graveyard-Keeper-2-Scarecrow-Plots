@@ -25,13 +25,6 @@ namespace GK2ScarecrowPlots.Services
 
         private void ProcessScarecrow()
         {
-            if (ModConfig.HideScarecrow?.Value != true)
-            {
-                lastScarecrowInstanceId = 0;
-
-                return;
-            }
-
             if (!ScarecrowAnchorDetector.TryGetScarecrowRoot(out Transform scarecrow))
             {
                 return;
@@ -44,15 +37,44 @@ namespace GK2ScarecrowPlots.Services
                 return;
             }
 
+            lastScarecrowInstanceId = instanceId;
+
             ModLog.Debug(
                 $"New scarecrow instance detected | "
                     + $"InstanceId={instanceId} | "
                     + $"Position={scarecrow.position}"
             );
 
-            ScarecrowVisualHelper.Hide(scarecrow);
+            ProcessGardenWithAnchor();
 
-            lastScarecrowInstanceId = instanceId;
+            if (ModConfig.HideScarecrow?.Value == true)
+            {
+                ScarecrowVisualHelper.Hide(scarecrow);
+            }
+        }
+
+        private static void ProcessGardenWithAnchor()
+        {
+            WorldZone[] zones = Object.FindObjectsByType<WorldZone>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None
+            );
+
+            foreach (WorldZone zone in zones)
+            {
+                if (zone?.Data == null || zone.Data.id != "garden")
+                {
+                    continue;
+                }
+
+                ModLog.Debug("Reprocessing garden after scarecrow instance became available.");
+
+                GardenZoneProcessor.Process(zone, "ScarecrowWatcher");
+
+                return;
+            }
+
+            ModLog.Debug("Garden zone not found while processing scarecrow instance.");
         }
     }
 }

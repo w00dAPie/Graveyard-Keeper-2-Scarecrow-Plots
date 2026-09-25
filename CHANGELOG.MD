@@ -1,5 +1,15 @@
 # Changelog
 
+
+## 0.1.5
+
+### Fixed
+
+- Fixed incorrect garden plot detection on saves where the scarecrow object is loaded after the garden zone.
+- Added automatic garden reprocessing once the scarecrow instance becomes available.
+- Improved scarecrow anchor detection reliability for larger or modified garden layouts.
+- Prevented the grid fallback from being the final detection result when the actual scarecrow object becomes available later.
+
 ## 0.1.4
 
 ### Added

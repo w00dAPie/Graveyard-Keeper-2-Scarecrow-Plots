@@ -14,7 +14,7 @@ namespace GK2ScarecrowPlots
 
         public const string PluginName = "Graveyard Keeper 2 - Scarecrow Plots";
 
-        public const string PluginVersion = "0.1.4";
+        public const string PluginVersion = "0.1.5";
 
         private Harmony harmony;
 
