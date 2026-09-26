@@ -25,3 +25,5 @@ Thumbs.db
 # Release packages
 release/
 *.zipicon-original.png
+icon-original.png
+*.zip
