@@ -1,5 +1,7 @@
+using System;
 using BepInEx;
 using GK2ScarecrowPlots.Configuration;
+using GK2ScarecrowPlots.Helpers;
 using GK2ScarecrowPlots.Logging;
 using GK2ScarecrowPlots.Services;
 using HarmonyLib;
@@ -14,7 +16,7 @@ namespace GK2ScarecrowPlots
 
         public const string PluginName = "Graveyard Keeper 2 - Scarecrow Plots";
 
-        public const string PluginVersion = "0.1.8";
+        public const string PluginVersion = "0.1.9";
 
         private Harmony harmony;
 
@@ -44,6 +46,7 @@ namespace GK2ScarecrowPlots
             harmony.PatchAll();
 
             MainGame.OnGameStarted += OnGameStarted;
+            ModConfig.Enabled.SettingChanged += OnEnabledChanged;
 
             ModLog.Info($"{PluginName} loaded.");
         }
@@ -51,6 +54,12 @@ namespace GK2ScarecrowPlots
         private void OnGameStarted()
         {
             RequestGardenProcessing("MainGame.OnGameStarted");
+        }
+
+        private void OnEnabledChanged(object sender, EventArgs args)
+        {
+            GardenZoneProcessor.InvalidateCompletion();
+            RequestGardenProcessing("EnabledChanged");
         }
 
         internal static void RequestGardenProcessing(string source)
@@ -70,6 +79,7 @@ namespace GK2ScarecrowPlots
         private void OnDestroy()
         {
             MainGame.OnGameStarted -= OnGameStarted;
+            ModConfig.Enabled.SettingChanged -= OnEnabledChanged;
 
             if (gardenStartupCoroutine != null)
             {

@@ -295,7 +295,9 @@ namespace GK2ScarecrowPlots.Detection
                         + $"Distance={bestDistance:F2}"
                 );
 
-            return found;
+            return found
+                && TryGetColumnSpacing(UniqueCoordinates(beds, true), out float spacing)
+                && bestDistance <= spacing * 0.5f;
         }
 
         private static bool TryFindRows(
@@ -306,73 +308,137 @@ namespace GK2ScarecrowPlots.Detection
             out float lowerZ
         )
         {
-            const float columnTolerance = 0.15f;
-
             upperZ = 0f;
             lowerZ = 0f;
 
-            float upperDistance = float.MaxValue;
+            // The scarecrow column can have BOTH target beds missing. Use the
+            // neighboring columns as row evidence, not just that column's beds.
+            var columns = UniqueCoordinates(beds, true);
+            var rows = UniqueCoordinates(beds, false);
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Garden grid | UniqueRows=[{string.Join(", ", rows.ConvertAll(z => z.ToString("F2")))}]"
+                );
 
-            float lowerDistance = float.MaxValue;
+            if (!TryGetColumnSpacing(columns, out float columnSpacing))
+                return false;
 
+            var nearby = beds.FindAll(bed =>
+                bed != null
+                && Mathf.Abs(bed.Position.x - columnX) <= columnSpacing * 2f + OccupancyTolerance
+            );
+            rows = UniqueCoordinates(nearby, false);
+            // A row needs evidence from at least two distinct columns.
+            rows.RemoveAll(z => CountRowColumns(nearby, z) < 2);
             bool upperFound = false;
-
             bool lowerFound = false;
-
-            foreach (WgoData bed in beds)
+            foreach (float z in rows)
             {
-                if (bed == null)
+                if (z > scarecrowZ && (!upperFound || z < upperZ))
                 {
-                    continue;
+                    upperZ = z;
+                    upperFound = true;
                 }
-
-                if (Mathf.Abs(bed.Position.x - columnX) > columnTolerance)
+                else if (z < scarecrowZ && (!lowerFound || z > lowerZ))
                 {
-                    continue;
+                    lowerZ = z;
+                    lowerFound = true;
                 }
+            }
 
-                float z = bed.Position.z;
-
-                if (z > scarecrowZ)
+            // Paired rows have a smaller gap than the aisle between pairs.
+            // Use the smallest observed adjacent gap supported by >=3 shared
+            // columns; averaging the gaps would put plots between actual rows.
+            float rowSpacing = float.MaxValue;
+            for (int i = 1; i < rows.Count; i++)
+            {
+                float gap = rows[i] - rows[i - 1];
+                int sharedColumns = 0;
+                foreach (float x in columns)
                 {
-                    float distance = z - scarecrowZ;
-
-                    if (distance < upperDistance)
-                    {
-                        upperDistance = distance;
-
-                        upperZ = z;
-
-                        upperFound = true;
-                    }
+                    if (Mathf.Abs(x - columnX) > columnSpacing * 2f + OccupancyTolerance)
+                        continue;
+                    if (HasBedAtXZ(nearby, x, rows[i - 1]) && HasBedAtXZ(nearby, x, rows[i]))
+                        sharedColumns++;
                 }
-                else if (z < scarecrowZ)
+                if (sharedColumns >= 3 && gap < rowSpacing)
+                    rowSpacing = gap;
+            }
+
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug(
+                    $"Garden grid spacing | ColumnSpacing={columnSpacing:F2} | RowSpacing={(rowSpacing == float.MaxValue ? "unreliable" : rowSpacing.ToString("F2"))}"
+                );
+
+            bool upperDirect = upperFound;
+            bool lowerDirect = lowerFound;
+            // Two rows alone cannot distinguish a bed-pair gap from an aisle.
+            // Require a third row before extending the observed pattern.
+            if (upperFound != lowerFound && rows.Count >= 3 && rowSpacing != float.MaxValue)
+            {
+                // Infer only ONE adjacent row, never jump across an unseen row
+                // or extrapolate from a distant bed such as Z=22.20 at Z=20.00.
+                if (upperFound && upperZ - scarecrowZ < rowSpacing - OccupancyTolerance)
                 {
-                    float distance = scarecrowZ - z;
-
-                    if (distance < lowerDistance)
-                    {
-                        lowerDistance = distance;
-
-                        lowerZ = z;
-
-                        lowerFound = true;
-                    }
+                    lowerZ = upperZ - rowSpacing;
+                    lowerFound = true;
+                }
+                else if (lowerFound && scarecrowZ - lowerZ < rowSpacing - OccupancyTolerance)
+                {
+                    upperZ = lowerZ + rowSpacing;
+                    upperFound = true;
                 }
             }
 
             if (ModLog.IsDebugEnabled)
                 ModLog.Debug(
-                    $"Scarecrow surrounding rows | "
-                        + $"ColumnX={columnX:F2} | "
-                        + $"ScarecrowZ={scarecrowZ:F2} | "
-                        + $"UpperZ={upperZ:F2} | "
-                        + $"UpperDistance={upperDistance:F2} | "
-                        + $"LowerZ={lowerZ:F2} | "
-                        + $"LowerDistance={lowerDistance:F2}"
+                    $"Scarecrow surrounding rows | ColumnX={columnX:F2} | ScarecrowZ={scarecrowZ:F2} | UpperZ={upperZ:F2} | UpperSource={(upperDirect ? "Direct" : upperFound ? "Inferred" : "Missing")} | LowerZ={lowerZ:F2} | LowerSource={(lowerDirect ? "Direct" : lowerFound ? "Inferred" : "Missing")}"
                 );
 
             return upperFound && lowerFound;
+        }
+
+        private static List<float> UniqueCoordinates(List<WgoData> beds, bool columns)
+        {
+            var values = new List<float>();
+            foreach (WgoData bed in beds)
+                if (bed != null)
+                    values.Add(columns ? bed.Position.x : bed.Position.z);
+            values.Sort();
+            var unique = new List<float>();
+            foreach (float value in values)
+                if (unique.Count == 0 || value - unique[unique.Count - 1] > OccupancyTolerance)
+                    unique.Add(value);
+            return unique;
+        }
+
+        private static bool TryGetColumnSpacing(List<float> columns, out float spacing)
+        {
+            spacing = float.MaxValue;
+            for (int i = 1; i < columns.Count; i++)
+                spacing = Mathf.Min(spacing, columns[i] - columns[i - 1]);
+            int matches = 0;
+            for (int i = 1; i < columns.Count; i++)
+                if (Mathf.Abs(columns[i] - columns[i - 1] - spacing) <= OccupancyTolerance)
+                    matches++;
+            // Three columns, not one arbitrary pair, must support the pitch.
+            return matches >= 2;
+        }
+
+        private static int CountRowColumns(List<WgoData> beds, float z)
+        {
+            return UniqueCoordinates(
+                beds.FindAll(bed => Mathf.Abs(bed.Position.z - z) <= OccupancyTolerance),
+                true
+            ).Count;
+        }
+
+        private static bool HasBedAtXZ(List<WgoData> beds, float x, float z)
+        {
+            return beds.Exists(bed =>
+                Mathf.Abs(bed.Position.x - x) <= OccupancyTolerance
+                && Mathf.Abs(bed.Position.z - z) <= OccupancyTolerance
+            );
         }
 
         private static float FindNearestBedY(List<WgoData> beds, Vector3 scarecrowPosition)

@@ -27,3 +27,11 @@ release/
 *.zipicon-original.png
 icon-original.png
 *.zip
+
+#TEST
+/Tests
+
+#thunderstore
+.thunderstore-token
+publish.ps1
+thunderstore.toml

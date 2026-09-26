@@ -1,5 +1,21 @@
 # Changelog
 
+
+## 0.1.9
+
+### Fixed
+
+- Fixed plot detection for earlier `garden_t1` layouts where a surrounding garden row is not unlocked yet.
+- Fixed blocked scarecrow plot positions being incorrectly treated as permanently completed.
+- Missing plots can now be created after a chest or other blocking object is removed.
+
+### Changed
+
+- Improved garden grid inference for partially unlocked layouts.
+- Improved blocker handling without affecting user-placed objects.
+- Preserved event-driven processing without reintroducing background polling.
+
+
 ## 0.1.8
 
 - Removed continuous scarecrow polling during gameplay.

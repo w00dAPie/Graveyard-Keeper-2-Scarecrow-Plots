@@ -25,20 +25,23 @@ namespace GK2ScarecrowPlots.Services
                 else if (!ReferenceEquals(world, currentWorld))
                     yield break;
 
-                if (
-                    GardenZoneRegistry.TryGet(out WorldZone zone)
-                    && GardenZoneProcessor.Process(
+                if (GardenZoneRegistry.TryGet(out WorldZone zone))
+                {
+                    GardenZoneProcessor.ProcessingResult result = GardenZoneProcessor.Process(
                         zone,
                         source,
                         allowGridFallback: attempt == maxAttempts
-                    )
-                )
-                {
-                    if (ModLog.IsDebugEnabled)
-                        ModLog.Debug(
-                            $"Scarecrow startup processing completed. | Source={source} | Attempt={attempt}"
-                        );
-                    yield break;
+                    );
+                    if (result != GardenZoneProcessor.ProcessingResult.Retry)
+                    {
+                        if (ModLog.IsDebugEnabled)
+                            ModLog.Debug(
+                                result == GardenZoneProcessor.ProcessingResult.Complete
+                                    ? $"Scarecrow startup processing completed. | Source={source} | Attempt={attempt}"
+                                    : $"Scarecrow startup processing deferred. | Source={source} | Reason=BlockedTarget | Waiting for the next garden initialization event."
+                            );
+                        yield break;
+                    }
                 }
 
                 yield return delay;

@@ -15,6 +15,29 @@ namespace GK2ScarecrowPlots.Helpers
         private static string completedPlotIds;
         private static Vector3 completedAnchorPosition;
 
+        private static object blockedWorld;
+        private static string blockedScene;
+        private static readonly HashSet<Vector3> blockedTargets = new HashSet<Vector3>();
+
+        internal enum ProcessingResult
+        {
+            Retry,
+            Complete,
+            Blocked,
+        }
+
+        private enum TargetResult
+        {
+            Complete,
+            Blocked,
+            Failed,
+        }
+
+        internal static void InvalidateCompletion()
+        {
+            completedWorld = null;
+        }
+
         internal static bool IsCompleted(Transform root, Transform scarecrow, string sceneId)
         {
             if (!ModConfig.Enabled.Value)
@@ -32,25 +55,29 @@ namespace GK2ScarecrowPlots.Helpers
                 && completedPlotIds == ModConfig.CreatedPlotIds.Value;
         }
 
-        // True means this attempt completed; callers may retry incomplete initialization.
-        internal static bool Process(WorldZone zone, string source, bool allowGridFallback = false)
+        // Only initialization/creation failures need bounded retries in the same event.
+        internal static ProcessingResult Process(
+            WorldZone zone,
+            string source,
+            bool allowGridFallback = false
+        )
         {
             if (zone == null)
             {
                 if (ModLog.IsDebugEnabled)
                     ModLog.Debug($"Garden processing skipped | Source={source} | Zone=null");
 
-                return false;
+                return ProcessingResult.Retry;
             }
 
             if (GameWorldAccess.Current == null)
-                return false;
+                return ProcessingResult.Retry;
 
             WorldZoneData zoneData = zone.Data;
 
             if (zoneData == null || zoneData.id != "garden")
             {
-                return false;
+                return ProcessingResult.Retry;
             }
 
             GardenZoneRegistry.Remember(zone);
@@ -73,7 +100,7 @@ namespace GK2ScarecrowPlots.Helpers
                 GardenPlotHelper.RemoveCreatedPlots();
 
                 if (ModConfig.HideScarecrow?.Value != true)
-                    return true;
+                    return ProcessingResult.Complete;
             }
 
             if (!GardenZoneRegistry.TryGetVisualRoot(zone, out Transform gardenRoot))
@@ -82,7 +109,7 @@ namespace GK2ScarecrowPlots.Helpers
                     ModLog.Debug(
                         $"Garden processing incomplete | Reason=VisualRootUnavailable | ZoneId={zoneData.id} | SceneId={zoneData.gameSceneId} | RegisteredWGOs={zone.Wgos.Count}"
                     );
-                return false;
+                return ProcessingResult.Retry;
             }
 
             bool hasAnchor = ScarecrowAnchorDetector.TryGetScarecrowRoot(
@@ -93,19 +120,19 @@ namespace GK2ScarecrowPlots.Helpers
                 ScarecrowVisualHelper.Hide(scarecrow);
 
             if (!ModConfig.Enabled.Value)
-                return hasAnchor;
+                return hasAnchor ? ProcessingResult.Complete : ProcessingResult.Retry;
 
             if (IsCompleted(gardenRoot, scarecrow, zoneData.gameSceneId))
-                return true;
+                return ProcessingResult.Complete;
 
             GameScene scene = MainGame.PlayerController?.CurrentGameScene;
             if (scene == null || scene.Id != zoneData.gameSceneId)
-                return false;
+                return ProcessingResult.Retry;
 
             // Never infer grid positions merely because visuals have not loaded yet.
             // A final bounded attempt may use a fully initialized, anchorless garden.
             if (!hasAnchor && (!allowGridFallback || !scene.IsStartCompleted))
-                return false;
+                return ProcessingResult.Retry;
 
             if (ModLog.IsDebugEnabled)
                 ModLog.Debug($"Processing garden | Source={source} | ZoneId={zoneData.id}");
@@ -125,7 +152,7 @@ namespace GK2ScarecrowPlots.Helpers
 
             if (!hasGardenBuilder)
             {
-                return false;
+                return ProcessingResult.Retry;
             }
 
             if (ModLog.IsDebugEnabled)
@@ -144,7 +171,7 @@ namespace GK2ScarecrowPlots.Helpers
             );
             // A real anchor takes precedence even if its surrounding beds are still loading.
             if (hasAnchor && !anchorFound)
-                return false;
+                return ProcessingResult.Retry;
             if (anchorFound)
             {
                 if (ModLog.IsDebugEnabled)
@@ -176,7 +203,7 @@ namespace GK2ScarecrowPlots.Helpers
                     if (ModLog.IsDebugEnabled)
                         ModLog.Debug("Scarecrow detection failed.");
 
-                    return false;
+                    return ProcessingResult.Retry;
                 }
 
                 if (ModLog.IsDebugEnabled)
@@ -200,12 +227,36 @@ namespace GK2ScarecrowPlots.Helpers
                         + $"OccupiedB={targetBOccupied}"
                 );
 
+            if (!ReferenceEquals(blockedWorld, GameWorldAccess.Current) || blockedScene != scene.Id)
+            {
+                blockedTargets.Clear();
+                blockedWorld = GameWorldAccess.Current;
+                blockedScene = scene.Id;
+            }
+            blockedTargets.RemoveWhere(position =>
+                !position.Equals(targetA) && !position.Equals(targetB)
+            );
+
             bool completed;
+            bool blocked;
             using (var batch = new GardenPlotHelper.PlotCreationBatch())
             {
-                bool completedA = TrySpawnGardenPlot(scene, wgos, targetA, targetAOccupied, batch);
-                bool completedB = TrySpawnGardenPlot(scene, wgos, targetB, targetBOccupied, batch);
-                completed = completedA && completedB;
+                TargetResult resultA = TrySpawnGardenPlot(
+                    scene,
+                    wgos,
+                    targetA,
+                    targetAOccupied,
+                    batch
+                );
+                TargetResult resultB = TrySpawnGardenPlot(
+                    scene,
+                    wgos,
+                    targetB,
+                    targetBOccupied,
+                    batch
+                );
+                completed = resultA == TargetResult.Complete && resultB == TargetResult.Complete;
+                blocked = resultA == TargetResult.Blocked || resultB == TargetResult.Blocked;
             }
             // Persist completion only after both plots succeeded and the batch saved IDs.
             // Visual instances can be recreated by chunk loading without changing the plots.
@@ -218,10 +269,20 @@ namespace GK2ScarecrowPlots.Helpers
                 completedAnchorPosition = scarecrow.position;
                 completedPlotIds = ModConfig.CreatedPlotIds.Value;
             }
-            return completed;
+            if (!completed)
+            {
+                InvalidateCompletion();
+                if (ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        $"Garden processing incomplete | Reason={(blocked ? "BlockedTarget" : "PlotCreationFailed")}"
+                    );
+            }
+            return completed ? ProcessingResult.Complete
+                : blocked ? ProcessingResult.Blocked
+                : ProcessingResult.Retry;
         }
 
-        private static bool TrySpawnGardenPlot(
+        private static TargetResult TrySpawnGardenPlot(
             GameScene scene,
             List<WgoData> wgos,
             Vector3 position,
@@ -231,12 +292,13 @@ namespace GK2ScarecrowPlots.Helpers
         {
             if (gardenBedOccupied)
             {
+                blockedTargets.Remove(position);
                 if (ModLog.IsDebugEnabled)
                     ModLog.Debug(
                         $"Skipping garden plot at {position}: " + "garden bed already exists."
                     );
 
-                return true;
+                return TargetResult.Complete;
             }
 
             if (ModLog.IsDebugEnabled)
@@ -246,20 +308,24 @@ namespace GK2ScarecrowPlots.Helpers
 
             if (blockingWgo != null)
             {
+                blockedTargets.Add(position);
                 if (ModLog.IsDebugEnabled)
                     ModLog.Debug(
-                        $"Target blocked | "
+                        $"Target blocked temporarily | "
                             + $"Position={position} | "
                             + $"BlockingWgo="
                             + $"{blockingWgo.Definition?.id ?? blockingWgo.id} | "
                             + $"BlockingPosition={blockingWgo.Position}"
                     );
 
-                return true;
+                return TargetResult.Blocked;
             }
 
+            bool previouslyBlocked = blockedTargets.Remove(position);
             if (ModLog.IsDebugEnabled)
-                ModLog.Debug($"Target clear | Position={position}");
+                ModLog.Debug(
+                    $"{(previouslyBlocked ? "Previously blocked target now clear" : "Target clear")} | Position={position}"
+                );
 
             WgoData created = GardenPlotHelper.SpawnGardenPlot(scene, position, batch);
 
@@ -267,7 +333,7 @@ namespace GK2ScarecrowPlots.Helpers
             {
                 wgos.Add(created);
             }
-            return created != null;
+            return created != null ? TargetResult.Complete : TargetResult.Failed;
         }
 
         private static WgoData FindBlockingWgo(List<WgoData> wgos, Vector3 position)
@@ -276,12 +342,12 @@ namespace GK2ScarecrowPlots.Helpers
 
             foreach (WgoData wgo in wgos)
             {
-                if (wgo == null || wgo.Definition == null)
+                if (wgo == null)
                 {
                     continue;
                 }
 
-                if (wgo.Definition.wgoGroup == "garden_bed")
+                if (wgo.Definition?.wgoGroup == "garden_bed")
                 {
                     continue;
                 }

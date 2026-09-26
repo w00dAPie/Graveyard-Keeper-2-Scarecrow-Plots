@@ -1,8 +1,8 @@
 {
   "name": "GK2ScarecrowPlots",
-  "version_number": "0.1.8",
+  "version_number": "0.1.9",
   "website_url": "https://github.com/w00dAPie/Graveyard-Keeper-2-Scarecrow-Plots",
-  "description": "Adds two crop plots beneath the scarecrow and lets you optionally hide the scarecrow.",
+  "description": "Restores the two garden plots around the scarecrow and optionally hides the scarecrow, including its collision.",
   "dependencies": [
     "BepInEx-BepInExPack-5.4.2305"
   ]
