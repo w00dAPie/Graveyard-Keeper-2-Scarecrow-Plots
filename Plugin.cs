@@ -14,14 +14,12 @@ namespace GK2ScarecrowPlots
 
         public const string PluginName = "Graveyard Keeper 2 - Scarecrow Plots";
 
-        public const string PluginVersion = "0.1.6";
+        public const string PluginVersion = "0.1.8";
 
         private Harmony harmony;
 
         private Coroutine gardenStartupCoroutine;
-        private Coroutine scarecrowWatcherCoroutine;
-
-        private ScarecrowWatcherService scarecrowWatcherService;
+        private static Plugin instance;
 
         private void Awake()
         {
@@ -40,29 +38,33 @@ namespace GK2ScarecrowPlots
 
             ModLog.Info($"{PluginName} {PluginVersion} loading...");
 
+            instance = this;
             harmony = new Harmony(PluginGuid);
 
             harmony.PatchAll();
 
             MainGame.OnGameStarted += OnGameStarted;
 
-            scarecrowWatcherService = new ScarecrowWatcherService();
-
-            scarecrowWatcherCoroutine = StartCoroutine(scarecrowWatcherService.Watch());
-
             ModLog.Info($"{PluginName} loaded.");
         }
 
         private void OnGameStarted()
         {
-            ModLog.Debug("Game started. Waiting for garden zone...");
+            RequestGardenProcessing("MainGame.OnGameStarted");
+        }
 
-            if (gardenStartupCoroutine != null)
-            {
-                StopCoroutine(gardenStartupCoroutine);
-            }
+        internal static void RequestGardenProcessing(string source)
+        {
+            if (instance == null)
+                return;
 
-            gardenStartupCoroutine = StartCoroutine(GardenStartupService.ProcessGarden());
+            // Coalesce initialization events into one bounded retry coroutine.
+            if (instance.gardenStartupCoroutine != null)
+                instance.StopCoroutine(instance.gardenStartupCoroutine);
+
+            instance.gardenStartupCoroutine = instance.StartCoroutine(
+                GardenStartupService.ProcessGarden(source)
+            );
         }
 
         private void OnDestroy()
@@ -74,10 +76,7 @@ namespace GK2ScarecrowPlots
                 StopCoroutine(gardenStartupCoroutine);
             }
 
-            if (scarecrowWatcherCoroutine != null)
-            {
-                StopCoroutine(scarecrowWatcherCoroutine);
-            }
+            instance = null;
 
             harmony?.UnpatchSelf();
         }

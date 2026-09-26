@@ -9,9 +9,31 @@ namespace GK2ScarecrowPlots.Helpers
     internal static class GardenZoneProcessor
     {
         private const float BlockedPositionTolerance = 0.35f;
+        private static object completedWorld;
+        private static string completedScene;
+        private static string completedTier;
+        private static string completedPlotIds;
+        private static Vector3 completedAnchorPosition;
+
+        internal static bool IsCompleted(Transform root, Transform scarecrow, string sceneId)
+        {
+            if (!ModConfig.Enabled.Value)
+            {
+                completedWorld = null;
+                return false;
+            }
+            return GameWorldAccess.Current != null
+                && ReferenceEquals(completedWorld, GameWorldAccess.Current)
+                && root != null
+                && scarecrow != null
+                && completedScene == sceneId
+                && completedTier == root.name
+                && completedAnchorPosition.Equals(scarecrow.position)
+                && completedPlotIds == ModConfig.CreatedPlotIds.Value;
+        }
 
         // True means this attempt completed; callers may retry incomplete initialization.
-        internal static bool Process(WorldZone zone, string source, Transform scarecrow = null)
+        internal static bool Process(WorldZone zone, string source, bool allowGridFallback = false)
         {
             if (zone == null)
             {
@@ -32,11 +54,10 @@ namespace GK2ScarecrowPlots.Helpers
             }
 
             GardenZoneRegistry.Remember(zone);
-            if (ModLog.IsDebugEnabled)
-                ModLog.Debug($"Processing garden | Source={source} | ZoneId={zoneData.id}");
 
             if (!ModConfig.Enabled.Value)
             {
+                completedWorld = null;
                 if (ModLog.IsDebugEnabled)
                     ModLog.Debug("Scarecrow Plots disabled. Removing mod-created plots.");
 
@@ -51,8 +72,43 @@ namespace GK2ScarecrowPlots.Helpers
 
                 GardenPlotHelper.RemoveCreatedPlots();
 
-                return true;
+                if (ModConfig.HideScarecrow?.Value != true)
+                    return true;
             }
+
+            if (!GardenZoneRegistry.TryGetVisualRoot(zone, out Transform gardenRoot))
+            {
+                if (allowGridFallback && ModLog.IsDebugEnabled)
+                    ModLog.Debug(
+                        $"Garden processing incomplete | Reason=VisualRootUnavailable | ZoneId={zoneData.id} | SceneId={zoneData.gameSceneId} | RegisteredWGOs={zone.Wgos.Count}"
+                    );
+                return false;
+            }
+
+            bool hasAnchor = ScarecrowAnchorDetector.TryGetScarecrowRoot(
+                gardenRoot,
+                out Transform scarecrow
+            );
+            if (hasAnchor && ModConfig.HideScarecrow?.Value == true)
+                ScarecrowVisualHelper.Hide(scarecrow);
+
+            if (!ModConfig.Enabled.Value)
+                return hasAnchor;
+
+            if (IsCompleted(gardenRoot, scarecrow, zoneData.gameSceneId))
+                return true;
+
+            GameScene scene = MainGame.PlayerController?.CurrentGameScene;
+            if (scene == null || scene.Id != zoneData.gameSceneId)
+                return false;
+
+            // Never infer grid positions merely because visuals have not loaded yet.
+            // A final bounded attempt may use a fully initialized, anchorless garden.
+            if (!hasAnchor && (!allowGridFallback || !scene.IsStartCompleted))
+                return false;
+
+            if (ModLog.IsDebugEnabled)
+                ModLog.Debug($"Processing garden | Source={source} | ZoneId={zoneData.id}");
 
             CollectGarden(
                 zoneData,
@@ -81,11 +137,14 @@ namespace GK2ScarecrowPlots.Helpers
             bool targetAOccupied;
             bool targetBOccupied;
 
-            ScarecrowAnchorDetector.Result anchorResult;
-            bool anchorFound =
-                scarecrow != null
-                    ? ScarecrowAnchorDetector.TryDetect(beds, scarecrow, out anchorResult)
-                    : ScarecrowAnchorDetector.TryDetect(beds, out anchorResult);
+            bool anchorFound = ScarecrowAnchorDetector.TryDetect(
+                beds,
+                scarecrow,
+                out ScarecrowAnchorDetector.Result anchorResult
+            );
+            // A real anchor takes precedence even if its surrounding beds are still loading.
+            if (hasAnchor && !anchorFound)
+                return false;
             if (anchorFound)
             {
                 if (ModLog.IsDebugEnabled)
@@ -141,24 +200,25 @@ namespace GK2ScarecrowPlots.Helpers
                         + $"OccupiedB={targetBOccupied}"
                 );
 
-            GameScene scene = MainGame.PlayerController?.CurrentGameScene;
-
-            if (scene == null)
-            {
-                if (ModLog.IsDebugEnabled)
-                    ModLog.Debug(
-                        $"Garden processing stopped | Source={source} | " + "CurrentGameScene=null"
-                    );
-
-                return false;
-            }
-
+            bool completed;
             using (var batch = new GardenPlotHelper.PlotCreationBatch())
             {
                 bool completedA = TrySpawnGardenPlot(scene, wgos, targetA, targetAOccupied, batch);
                 bool completedB = TrySpawnGardenPlot(scene, wgos, targetB, targetBOccupied, batch);
-                return completedA && completedB;
+                completed = completedA && completedB;
             }
+            // Persist completion only after both plots succeeded and the batch saved IDs.
+            // Visual instances can be recreated by chunk loading without changing the plots.
+            // A grid result must never suppress a later authoritative anchor attempt.
+            if (completed && anchorFound)
+            {
+                completedWorld = GameWorldAccess.Current;
+                completedScene = zoneData.gameSceneId;
+                completedTier = gardenRoot.name;
+                completedAnchorPosition = scarecrow.position;
+                completedPlotIds = ModConfig.CreatedPlotIds.Value;
+            }
+            return completed;
         }
 
         private static bool TrySpawnGardenPlot(

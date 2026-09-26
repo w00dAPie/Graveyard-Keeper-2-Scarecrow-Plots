@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using GK2ScarecrowPlots.Logging;
 using UnityEngine;
 
@@ -5,6 +6,9 @@ namespace GK2ScarecrowPlots.Helpers
 {
     internal static class ScarecrowVisualHelper
     {
+        private static readonly HashSet<Transform> hiddenScarecrows = new HashSet<Transform>();
+        private static object hiddenWorld;
+
         internal static void Hide(Transform scarecrow)
         {
             if (scarecrow == null)
@@ -12,9 +16,23 @@ namespace GK2ScarecrowPlots.Helpers
                 return;
             }
 
+            WorldData world = GameWorldAccess.Current;
+            if (!ReferenceEquals(hiddenWorld, world))
+            {
+                hiddenScarecrows.Clear();
+                hiddenWorld = world;
+            }
+
+            // Pooled garden reloads keep the same anchor and its disabled components.
+            // New anchors (including upgrades) and new worlds must still be handled.
+            if (world == null || hiddenScarecrows.Contains(scarecrow))
+                return;
+
             DisableRenderers(scarecrow);
 
             DisableColliders(scarecrow);
+
+            hiddenScarecrows.Add(scarecrow);
         }
 
         private static void DisableRenderers(Transform scarecrow)
@@ -23,7 +41,7 @@ namespace GK2ScarecrowPlots.Helpers
 
             foreach (Renderer renderer in renderers)
             {
-                if (renderer == null)
+                if (renderer == null || !renderer.enabled)
                 {
                     continue;
                 }
@@ -43,7 +61,7 @@ namespace GK2ScarecrowPlots.Helpers
 
             foreach (Collider collider in colliders)
             {
-                if (collider == null)
+                if (collider == null || !collider.enabled)
                 {
                     continue;
                 }

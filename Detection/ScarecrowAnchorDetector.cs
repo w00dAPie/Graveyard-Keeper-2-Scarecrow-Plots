@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using GK2ScarecrowPlots.Helpers;
 using GK2ScarecrowPlots.Logging;
@@ -10,6 +11,7 @@ namespace GK2ScarecrowPlots.Detection
         private const float OccupancyTolerance = 0.10f;
         private static Transform cachedScarecrow;
         private static object cachedWorld;
+        private static Transform cachedGardenRoot;
 
         internal sealed class Result
         {
@@ -20,14 +22,6 @@ namespace GK2ScarecrowPlots.Detection
             internal bool MissingBOccupied;
 
             internal Vector3 ScarecrowPosition;
-        }
-
-        internal static bool TryDetect(List<WgoData> beds, out Result result)
-        {
-            Transform scarecrow = null;
-            if (beds != null && beds.Count > 0)
-                TryGetScarecrowRoot(out scarecrow);
-            return TryDetect(beds, scarecrow, out result);
         }
 
         internal static bool TryDetect(List<WgoData> beds, Transform scarecrow, out Result result)
@@ -115,87 +109,69 @@ namespace GK2ScarecrowPlots.Detection
             return true;
         }
 
-        internal static bool TryGetScarecrowRoot(out Transform scarecrow)
+        internal static bool TryGetScarecrowRoot(Transform gardenRoot, out Transform scarecrow)
         {
             WorldData world = GameWorldAccess.Current;
             scarecrow = null;
-
-            if (world == null)
+            if (world == null || !IsGardenRoot(gardenRoot))
             {
-                cachedScarecrow = null;
                 cachedWorld = null;
+                cachedGardenRoot = null;
+                cachedScarecrow = null;
                 return false;
             }
 
-            if (ReferenceEquals(cachedWorld, world) && IsValidScarecrowAnchor(cachedScarecrow))
+            if (
+                ReferenceEquals(cachedWorld, world)
+                && cachedGardenRoot == gardenRoot
+                && TryGetScarecrowAnchor(cachedScarecrow, gardenRoot, out Transform cachedAnchor)
+            )
             {
-                scarecrow = cachedScarecrow;
+                scarecrow = cachedAnchor;
                 return true;
             }
 
-            cachedScarecrow = null;
+            bool rootChanged =
+                !ReferenceEquals(cachedWorld, world) || cachedGardenRoot != gardenRoot;
             cachedWorld = world;
-
-            Transform[] transforms = Object.FindObjectsByType<Transform>(
-                FindObjectsInactive.Include,
-                FindObjectsSortMode.None
-            );
-
+            cachedGardenRoot = gardenRoot;
+            cachedScarecrow = null;
             Transform bestCandidate = null;
-
-            foreach (Transform transform in transforms)
+            int candidateCount = 0;
+            foreach (Transform transform in gardenRoot.GetComponentsInChildren<Transform>(true))
             {
-                if (!TryGetScarecrowAnchor(transform, out Transform candidate))
+                if (transform.name.StartsWith("scarecrow_on_stick", StringComparison.Ordinal))
+                    candidateCount++;
+                if (!TryGetScarecrowAnchor(transform, gardenRoot, out Transform candidate))
                     continue;
-
-                if (ReferenceEquals(bestCandidate, candidate))
-                    continue;
-
-                if (bestCandidate == null)
-                {
-                    bestCandidate = candidate;
-                    continue;
-                }
-
                 if (
-                    !bestCandidate.gameObject.activeInHierarchy
-                    && candidate.gameObject.activeInHierarchy
+                    bestCandidate == null
+                    || (
+                        !bestCandidate.gameObject.activeInHierarchy
+                        && candidate.gameObject.activeInHierarchy
+                    )
                 )
                     bestCandidate = candidate;
             }
+
+            // Report the searched hierarchy even when no anchor was found, once per root.
+            if (ModLog.IsDebugEnabled && (rootChanged || bestCandidate != null))
+                ModLog.Debug(
+                    $"Garden root found | Path={GetTransformPath(gardenRoot)} | ScarecrowCandidates={candidateCount} | AnchorFound={bestCandidate != null}"
+                );
 
             if (bestCandidate == null)
                 return false;
 
             cachedScarecrow = bestCandidate;
             scarecrow = bestCandidate;
-
             if (ModLog.IsDebugEnabled)
             {
                 ModLog.Debug(
-                    $"Scarecrow anchor selected | "
-                        + $"Path={GetTransformPath(bestCandidate)} | "
-                        + $"Position={bestCandidate.position}"
+                    $"Scarecrow anchor selected | Path={GetTransformPath(bestCandidate)} | Position={bestCandidate.position}"
                 );
             }
-
             return true;
-        }
-
-        private static bool IsValidScarecrowAnchor(Transform transform)
-        {
-            if (transform == null)
-                return false;
-
-            Transform parent = transform.parent;
-
-            if (parent == null || parent.name != "Base")
-                return false;
-
-            if (!transform.name.StartsWith("scarecrow_on_stick"))
-                return false;
-
-            return IsGardenRoot(parent.parent);
         }
 
         private static string GetTransformPath(Transform transform)
@@ -215,48 +191,67 @@ namespace GK2ScarecrowPlots.Detection
             return path;
         }
 
-        private static bool TryGetScarecrowAnchor(Transform transform, out Transform anchor)
+        private static bool TryGetScarecrowAnchor(
+            Transform transform,
+            Transform gardenRoot,
+            out Transform anchor
+        )
         {
             anchor = null;
-
-            if (transform == null)
+            if (
+                transform == null
+                || !transform.name.StartsWith("scarecrow_on_stick", StringComparison.Ordinal)
+            )
                 return false;
 
-            if (!transform.name.StartsWith("scarecrow_on_stick"))
-                return false;
-
-            Transform current = transform;
-
-            while (current != null)
+            // Resolve every nested mesh/shadow match to the placement root below Base.
+            for (
+                Transform current = transform;
+                current != null && current != gardenRoot;
+                current = current.parent
+            )
             {
                 Transform parent = current.parent;
-
-                if (parent == null)
-                    return false;
-
-                if (parent.name == "Base")
+                if (parent != null && parent.name == "Base" && parent.parent == gardenRoot)
                 {
-                    Transform gardenRoot = parent.parent;
-
-                    if (!IsGardenRoot(gardenRoot))
+                    if (
+                        !current.name.StartsWith("scarecrow_on_stick", StringComparison.Ordinal)
+                        || current.name.StartsWith(
+                            "scarecrow_on_stick_sh",
+                            StringComparison.Ordinal
+                        )
+                    )
                         return false;
-
                     anchor = current;
                     return true;
                 }
-
-                current = parent;
             }
-
             return false;
         }
 
-        private static bool IsGardenRoot(Transform transform)
+        internal static bool IsGardenRoot(Transform transform)
         {
             if (transform == null)
                 return false;
 
-            return transform.name.StartsWith("garden_t") && transform.name.EndsWith("(Clone)");
+            const string prefix = "garden_t";
+            const string suffix = "(Clone)";
+            string name = transform.name;
+            int tierEnd = name.Length - suffix.Length;
+            if (
+                tierEnd <= prefix.Length
+                || !name.StartsWith(prefix, StringComparison.Ordinal)
+                || !name.EndsWith(suffix, StringComparison.Ordinal)
+            )
+                return false;
+
+            // garden_tablet_* crop signs share the prefix but are not garden tier prefabs.
+            for (int i = prefix.Length; i < tierEnd; i++)
+            {
+                if (name[i] < '0' || name[i] > '9')
+                    return false;
+            }
+            return true;
         }
 
         private static bool TryFindNearestColumn(

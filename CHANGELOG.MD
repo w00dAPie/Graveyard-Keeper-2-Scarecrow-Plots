@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8
+
+- Fixed scarecrow detection after upgrading the garden.
+- Added support for nested and changed scarecrow hierarchies.
+- Improved compatibility with different garden upgrade tiers.
+- Removed continuous scarecrow polling during gameplay.
+- Reduced unnecessary garden and scarecrow scans when re-entering the area.
+- Scarecrow renderers and colliders are now hidden only once per instance.
+- Improved handling of delayed garden visual loading.
+
 ## 0.1.7
 
 - Fixed scarecrow detection after upgrading the garden.

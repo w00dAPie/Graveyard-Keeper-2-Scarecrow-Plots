@@ -9,7 +9,10 @@ namespace GK2ScarecrowPlots.Patches
         [HarmonyPostfix]
         private static void Postfix(WorldZone __instance)
         {
-            GardenZoneProcessor.Process(__instance, "AddWgosOnGameSceneStart");
+            if (__instance == null || __instance.Data == null || __instance.Data.id != "garden")
+                return;
+            GardenZoneRegistry.Remember(__instance);
+            Plugin.RequestGardenProcessing("AddWgosOnGameSceneStart");
         }
     }
 }
